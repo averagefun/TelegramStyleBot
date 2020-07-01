@@ -10,6 +10,9 @@ bot_active = True
 # максимальный объём присылаемой фотографии в телеграм (Кб)
 maxsize = 500
 
+# клавиатура установленных стилей
+style_markup = json.dumps({'keyboard': [['Лето >> Зима'], ['Зима >> Лето']], 'resize_keyboard': True})
+
 # получаем токен бота из файла
 with open('cred.txt') as file:
     Token = file.readline()
@@ -48,14 +51,29 @@ def msg_handler(event):
     if 'photo' in msg.keys():
         photo_handler(user_id, msg['photo'], db)
     elif 'text' in msg.keys():
-        # команды
-        if msg['text'][0] == '/':
+        styles = {'Лето >> Зима': 'summer2winter_yosemite',
+                  'Зима >> Лето': 'winter2summer_yosemite'}
+
+        text = msg['text']
+        if text[0] == '/':
+            # это команда
             commands_handler(user_id, msg['text'], db)
         else:
             # проверяем наличие в таблице этого пользователя
             content_id = db.get_item(user_id)
             if not content_id or content_id[:4] != 'wait':
-                send_message(user_id, "Отправь мне <b>картинку</b>, а не сообщение!")
+                if text in styles:
+                    # пользователь выбрал установленный стиль
+                    send_message(user_id, "<b>Ок!</b>")
+                    message_id = send_sticker(user_id, 'loading')
+                    db.update_item(user_id, message_id)
+
+                    style = styles[text]
+                    content = get_file(content_id)
+                    # invoke_SM('CycleGAN', user_id, content, style)
+                else:
+                    send_message(user_id, "Отправь мне <b>картинку</b> или выбери значение на клавиатуре!",
+                                          "reply_markup", style_markup)
             else:
                 send_message(user_id,
                              "<b>Пожалуйста, дождитесь ответа бота!</b>\n<i>В случае ожидания более 2 минут, отправьте <b>/cancel</b>.</i>")
@@ -89,9 +107,8 @@ def photo_handler(user_id, photo, db):
         if not content_id:
             return
         db.put_item(user_id, content_id)
-        if_edit_markup = {'keyboard': [['Лето >> Зима'], ['Зима >> Лето']], 'resize_keyboard': True}
-        send_message(user_id, "<b>Контент-картинка принята!</b>\nТеперь отправь стиль-картинку или выбери установленный стиль!")
-
+        send_message(user_id, "<b>Контент-картинка принята!</b>\nТеперь отправь стиль-картинку или выбери установленный стиль!",
+                              "reply_markup", style_markup)
 
 # проверка на размер фотографии
 def check_photo(user_id, photos):
@@ -123,18 +140,24 @@ def commands_handler(user_id, command, db):
 
 
 def invoke_SM(net_type, chat_id, content, style):
-    body = {'content': content, 'style': style,
-            'max_imgsize': 1024, 'bot_token': Token,
-            'chat_id': chat_id, 'num_steps': 200}
-    names = {'NST': 'NeuralStyleTransferPoint',
-             'CycleGAN': 'CycleGANPoint'}
 
-    if not net_type in names:
+    if net_type == 'NST':
+        name = 'NeuralStyleTransferPoint'
+        body = {'content': content, 'style': style,
+                'max_imgsize': 1024, 'bot_token': Token,
+                'chat_id': chat_id, 'num_steps': 200}
+
+    elif net_type == 'CycleGAN':
+        name = 'CycleGANPoint'
+        body = {'content': content, 'style': style,
+                'chat_id': chat_id}
+
+    else:
         raise NameError("Network not found")
 
     client = boto3.client('sagemaker-runtime')
     response = client.invoke_endpoint(
-    EndpointName=names[net_type],
+    EndpointName=name,
     Body=json.dumps(body),
     ContentType='application/json',
     )
@@ -177,9 +200,13 @@ class DynamoDB:
 
 
 # Telegram methods
-def send_message(chat_id, text):
-    url = URL + "sendMessage?chat_id={}&text={}&parse_mode=HTML".format(chat_id, text)
-    requests.get(url)
+def send_message(chat_id, text, *args):  # Ф-ия отсылки сообщения/ *args: [0] - parameter_name, [1] - value
+    if len(args) == 0:
+        url = URL + "sendMessage?chat_id={}&text={}&parse_mode=HTML".format(chat_id, text)
+    elif len(args) == 2:
+        url = URL + "sendMessage?chat_id={}&text={}&{}={}&parse_mode=HTML".format(chat_id, text, args[0], args[1])
+    r = requests.get(url).json()
+    return r
 
 
 def delete_message(chat_id, message_id):
