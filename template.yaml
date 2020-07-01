@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  AWS
+
+  Sample SAM Template for AWS
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+
+Resources:
+
+  ## DynamoDB TABLE
+  # таблица, в которую будем сохранять file_id content картинки
+  ImageIdTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: ImageIdTable
+      ProvisionedThroughput:
+        WriteCapacityUnits: 1
+        ReadCapacityUnits: 1
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: N
+      KeySchema:
+        - KeyType: HASH
+          AttributeName: user_id
+
+  ## FUNCTIONS
+  # обработчик сообщений от пользователя
+  MsgHandler:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: MsgHandlerTBot
+      Description: "Handles message from TelegramBot"
+      CodeUri: MsgHandler/
+      Handler: entry.lambda_handler
+      Timeout: 5
+      MemorySize: 128
+      Runtime: python3.7
+      Policies:
+        # политика взаимодействия с DynamoDB
+        - DynamoDBCrudPolicy:
+            TableName:
+              Ref: ImageIdTable
+        # политика взаимодействия с SageMaker
+        - AmazonSageMakerFullAccess
+      # событие с телеграма
+      Events:
+        BotApi:
+          Type: Api
+          Properties:
+            Path: /
+            Method: post
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
