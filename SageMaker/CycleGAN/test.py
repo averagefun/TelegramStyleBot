@@ -13,6 +13,7 @@ def get_model(opt):
     model.eval()
     return model
 
+
 if __name__ == '__main__':
     opt = TestOptions().parse()  # get test options
     opt.display_id = -1

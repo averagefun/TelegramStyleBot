@@ -23,7 +23,7 @@ def input_fn(request_body, content_type='application/json'):
     content = input_data['content']
     format_ = content.split('.')[-1]
     
-    with open (f'mydataset/image.{format_}', 'wb') as f:
+    with open(f'mydataset/image.{format_}', 'wb') as f:
         r = requests.get(content)
         f.write(r.content)
 

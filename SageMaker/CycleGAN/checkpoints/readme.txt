@@ -1,1 +1,1 @@
-This Directory for pretrained models
+This directory for save pre-trained models.

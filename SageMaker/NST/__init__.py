@@ -1,1 +1,0 @@
-# NST SageMaker directory
