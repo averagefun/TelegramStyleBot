@@ -2,7 +2,9 @@ import json
 import boto3
 import requests
 
-### Управление ботом
+###
+# Управление ботом
+###
 
 # включение/выключение бота
 bot_active = True
@@ -10,13 +12,17 @@ bot_active = True
 # максимальный объём присылаемой фотографии в телеграм (Кб)
 maxsize = 500
 
-# клавиатура установленных стилей
-style_markup = json.dumps({'keyboard': [['Лето >> Зима'], ['Зима >> Лето']], 'resize_keyboard': True})
+# клавиатуры
+content_markup = {'keyboard': [['Отправьте контент-картинку боту!📷']], 'resize_keyboard': True}
+style_markup = {'keyboard': [['☀Лето >> Зима⛄', '⛄Зима >> Лето☀'],
+                             ['Стиль Ван Гога🇳🇱', 'Стиль Укиё-э🇯🇵'],
+                             ['Стиль Клода Моне🇫🇷', 'Стиль Поля Сезанна🇫🇷']], 'resize_keyboard': True, 'one_time_keyboard': True}
 
 # получаем токен бота из файла
 with open('cred.txt') as file:
     Token = file.readline()
 URL = "https://api.telegram.org/bot{}/".format(Token)
+
 
 def lambda_handler(event, context):
     # обрабатываем любые исключения
@@ -51,8 +57,12 @@ def msg_handler(event):
     if 'photo' in msg.keys():
         photo_handler(user_id, msg['photo'], db)
     elif 'text' in msg.keys():
-        styles = {'Лето >> Зима': 'summer2winter_yosemite',
-                  'Зима >> Лето': 'winter2summer_yosemite'}
+        styles = {'☀Лето >> Зима⛄': 'summer2winter_yosemite_pretrained',
+                  '⛄Зима >> Лето☀': 'winter2summer_yosemite_pretrained',
+                  'Стиль Ван Гога🇳🇱': 'style_vangogh_pretrained',
+                  'Стиль Укиё-э🇯🇵': 'style_ukiyoe_pretrained',
+                  'Стиль Клода Моне🇫🇷': 'style_monet_pretrained',
+                  'Стиль Поля Сезанна🇫🇷': 'style_cezanne_pretrained'}
 
         text = msg['text']
         if text[0] == '/':
@@ -61,19 +71,20 @@ def msg_handler(event):
         else:
             # проверяем наличие в таблице этого пользователя
             content_id = db.get_item(user_id)
-            if not content_id or content_id[:4] != 'wait':
+            if content_id and content_id[:4] != 'wait':
                 if text in styles:
                     # пользователь выбрал установленный стиль
-                    send_message(user_id, "<b>Ок!</b>")
                     message_id = send_sticker(user_id, 'loading')
                     db.update_item(user_id, message_id)
 
                     style = styles[text]
                     content = get_file(content_id)
-                    # invoke_SM('CycleGAN', user_id, content, style)
+                    invoke_sm('CycleGAN', user_id, content, style)
                 else:
-                    send_message(user_id, "Отправь мне <b>картинку</b> или выбери значение на клавиатуре!",
-                                          "reply_markup", style_markup)
+                    send_message(user_id, "Отправь мне <b>картинку</b> или выбери значение на клавиатуре!👇👇",
+                                 style_markup)
+            elif not content_id:
+                send_message(user_id, "Отправь мне <b>картинку</b>, а не сообщение.")
             else:
                 send_message(user_id,
                              "<b>Пожалуйста, дождитесь ответа бота!</b>\n<i>В случае ожидания более 2 минут, отправьте <b>/cancel</b>.</i>")
@@ -89,7 +100,7 @@ def photo_handler(user_id, photo, db):
         if content_id[:4] == 'wait':
             # пользователь отправил новую фотографию, когда бот ещё не обработал старую
             send_message(user_id,
-                         "Пожалуйста, дождитесь ответа бота!\nВ случае ожидания более 2 минут, отправьте <b>/cancel</b>.")
+                         "<b>Пожалуйста, дождитесь ответа бота!</b>\n<i>В случае ожидания более 2 минут, отправьте <b>/cancel</b>.</i>")
         else:
             # пользователь посылает 2 картинку (style image)
             style_id = check_photo(user_id, photo)
@@ -100,18 +111,21 @@ def photo_handler(user_id, photo, db):
             db.update_item(user_id, message_id)
             content = get_file(content_id)
             style = get_file(style_id)
-            invoke_SM('NST', user_id, content, style)
+            invoke_sm('NST', user_id, content, style)
     else:
         # пользователь посылает 1 картинку (content image)
         content_id = check_photo(user_id, photo)
         if not content_id:
             return
         db.put_item(user_id, content_id)
-        send_message(user_id, "<b>Контент-картинка принята!</b>\nТеперь отправь стиль-картинку или выбери установленный стиль!",
-                              "reply_markup", style_markup)
+        send_message(user_id,
+                     "<b>Контент-картинка принята!</b>\nТеперь отправь стиль-картинку или выбери установленный стиль!👇👇",
+                     style_markup)
+
 
 # проверка на размер фотографии
 def check_photo(user_id, photos):
+    # берём фотографию лучшего качества, не превышающую maxsize
     photos.reverse()
     for photo in photos:
         if photo['file_size'] < maxsize * 1000:
@@ -136,32 +150,30 @@ def commands_handler(user_id, command, db):
         send_message(user_id, help_text)
     elif command == '/cancel':
         db.delete_item(user_id)
-        send_message(user_id, "<b>Запрос отменён!</b>\n<i>Отправьте контент-картинку снова!</i>")
+        send_message(user_id, "<b>Запрос отменён!</b>\n<i>Отправьте контент-картинку снова!</i>",
+                     content_markup)
 
 
-def invoke_SM(net_type, chat_id, content, style):
+def invoke_sm(net_type, chat_id, content, style):
+    body = {'content': content, 'style': style,
+            'bot_token': Token, 'chat_id': chat_id}
 
     if net_type == 'NST':
         name = 'NeuralStyleTransferPoint'
-        body = {'content': content, 'style': style,
-                'max_imgsize': 1024, 'bot_token': Token,
-                'chat_id': chat_id, 'num_steps': 200}
-
+        body['max_imgsize'] = 1024
+        body['num_steps'] = 200
     elif net_type == 'CycleGAN':
         name = 'CycleGANPoint'
-        body = {'content': content, 'style': style,
-                'chat_id': chat_id}
-
     else:
         raise NameError("Network not found")
 
     client = boto3.client('sagemaker-runtime')
-    response = client.invoke_endpoint(
+    client.invoke_endpoint(
     EndpointName=name,
     Body=json.dumps(body),
     ContentType='application/json',
     )
-    return response
+
 
 class DynamoDB:
     def __init__(self, name):
@@ -200,13 +212,11 @@ class DynamoDB:
 
 
 # Telegram methods
-def send_message(chat_id, text, *args):  # Ф-ия отсылки сообщения/ *args: [0] - parameter_name, [1] - value
-    if len(args) == 0:
-        url = URL + "sendMessage?chat_id={}&text={}&parse_mode=HTML".format(chat_id, text)
-    elif len(args) == 2:
-        url = URL + "sendMessage?chat_id={}&text={}&{}={}&parse_mode=HTML".format(chat_id, text, args[0], args[1])
-    r = requests.get(url).json()
-    return r
+def send_message(chat_id, text, reply_markup=None):
+    url = URL + "sendMessage?chat_id={}&text={}&parse_mode=HTML".format(chat_id, text)
+    if reply_markup:
+        url += f"&reply_markup={json.dumps(reply_markup)}"
+    requests.get(url)
 
 
 def delete_message(chat_id, message_id):
