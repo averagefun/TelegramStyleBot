@@ -48,7 +48,8 @@ def msg_handler(event):
 
     # если бот не активены
     if not bot_active:
-        send_message(user_id, "Чтобы активировать бота, напишите @JwDaKing!")
+        send_message(user_id,
+                     "Чтобы активировать бота, напишите <b>@JwDaKing</b>.\nЗатем наберите <b>/start</b> для начала работы!")
         return
 
     # подключение к DynamoDB
@@ -146,7 +147,7 @@ def commands_handler(user_id, command, db):
         send_message(user_id,
                      "<b>Привет!</b>\nЧтобы начать, отправь мне картинку!")
     elif command == '/help':
-        help_text = """Simple help text"""
+        help_text = "<b>Подробная информация о боте:</b>\nhttps://github.com/Davie506/TelegramStyleBot"
         send_message(user_id, help_text)
     elif command == '/cancel':
         db.delete_item(user_id)
