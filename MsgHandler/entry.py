@@ -6,9 +6,6 @@ import requests
 # Управление ботом
 ###
 
-# включение/выключение бота
-bot_active = True
-
 # максимальный объём присылаемой фотографии в телеграм (Кб)
 maxsize = 500
 
@@ -46,12 +43,6 @@ def msg_handler(event):
     # инициализация пользователя
     user_id = msg['chat']['id']
 
-    # если бот не активены
-    if not bot_active:
-        send_message(user_id,
-                     "Чтобы активировать бота, напишите <b>@JwDaKing</b>.\nЗатем наберите <b>/start</b> для начала работы!")
-        return
-
     # подключение к DynamoDB
     db = DynamoDB('ImageIdTable')
 
@@ -80,7 +71,13 @@ def msg_handler(event):
 
                     style = styles[text]
                     content = get_file(content_id)
-                    invoke_sm('CycleGAN', user_id, content, style)
+                    try:
+                        invoke_sm('CycleGAN', user_id, content, style)
+                    except Exception:
+                        db.delete_item(user_id)
+                        delete_message(user_id, message_id)
+                        send_message(user_id,
+                                     "Извините, сейчас алгоритм преобразования стиля выключен. <b>/help - подробнее.</b>")
                 else:
                     send_message(user_id, "Отправь мне <b>картинку</b> или выбери значение на клавиатуре!👇👇",
                                  style_markup)
@@ -112,7 +109,14 @@ def photo_handler(user_id, photo, db):
             db.update_item(user_id, message_id)
             content = get_file(content_id)
             style = get_file(style_id)
-            invoke_sm('NST', user_id, content, style)
+            try:
+                invoke_sm('NST', user_id, content, style)
+            except Exception:
+                db.delete_item(user_id)
+                delete_message(user_id, message_id)
+                send_message(user_id,
+                             "Извините, сейчас алгоритм преобразования стиля выключен. <b>/help - подробнее.</b>")
+
     else:
         # пользователь посылает 1 картинку (content image)
         content_id = check_photo(user_id, photo)
@@ -147,7 +151,12 @@ def commands_handler(user_id, command, db):
         send_message(user_id,
                      "<b>Привет!</b>\nЧтобы начать, отправь мне картинку!")
     elif command == '/help':
-        help_text = "<b>Подробная информация о боте:</b>\nhttps://github.com/Davie506/TelegramStyleBot"
+        help_text = """
+<b>Внимание!</b>\nНапишите @JwDaKing для запуска преобразования стиля.
+Затем наберите /start для повторного запуска бота.
+Подробная информация о боте:\nhttps://github.com/Davie506/TelegramStyleBot
+                    """
+
         send_message(user_id, help_text)
     elif command == '/cancel':
         db.delete_item(user_id)
@@ -166,7 +175,8 @@ def invoke_sm(net_type, chat_id, content, style):
     elif net_type == 'CycleGAN':
         name = 'CycleGANPoint'
     else:
-        raise NameError("Network not found")
+        print(f"net_type {net_type} not found")
+        return
 
     client = boto3.client('sagemaker-runtime')
     client.invoke_endpoint(
@@ -174,6 +184,8 @@ def invoke_sm(net_type, chat_id, content, style):
     Body=json.dumps(body),
     ContentType='application/json',
     )
+
+
 
 
 class DynamoDB:
